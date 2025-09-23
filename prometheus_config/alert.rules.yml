@@ -1,0 +1,66 @@
+groups:
+  - name: container_alerts
+    rules:
+      # ServiceDown: bất kỳ exporter nào bị down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is DOWN (instance={{ $labels.instance }})"
+
+      # DBServiceDown: chuyên cho MySQL Exporter
+      - alert: DBServiceDown
+        expr: up{job="mysql_exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL Exporter is DOWN (instance={{ $labels.instance }})"
+
+      # Nginx Exporter down
+      - alert: NginxExporterDown
+        expr: up{job="nginx_exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nginx Exporter is DOWN (instance={{ $labels.instance }})"
+
+      # High CPU usage (container)
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[1m]) > 0.7
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+
+      # High Memory usage (container > ~500MB)
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes > 500000000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+
+      # Disk almost full (>80%)
+      - alert: DiskAlmostFull
+        expr: (node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} - node_filesystem_free_bytes{fstype!~"tmpfs|overlay"}) / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} > 0.8
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk almost full on {{ $labels.instance }}"
+
+      # Nginx quá nhiều request (flood)
+      - alert: NginxHighConnections
+        expr: nginx_http_requests_total > 1000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of Nginx requests on {{ $labels.instance }}"
+

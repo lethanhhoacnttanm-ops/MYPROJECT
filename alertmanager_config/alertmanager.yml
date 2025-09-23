@@ -1,0 +1,28 @@
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'lethanhhoa.cntt.anm@gmail.com'
+  smtp_auth_username: 'lethanhhoa.cntt.anm@gmail.com'
+  smtp_auth_password: 'surs nbji ydfb mkke'   # app password Gmail
+  smtp_require_tls: true
+  resolve_timeout: 5m
+
+route:
+  receiver: 'gmail-alert'
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 2m
+  repeat_interval: 1h
+  routes:
+    - match:
+        severity: critical
+      receiver: 'gmail-alert'
+    - match:
+        severity: warning
+      receiver: 'gmail-alert'
+
+receivers:
+  - name: 'gmail-alert'
+    email_configs:
+      - to: 'lethanhhoa.cntt.anm@gmail.com'
+        send_resolved: true
+

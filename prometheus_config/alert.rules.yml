@@ -1,66 +1,88 @@
 groups:
   - name: container_alerts
     rules:
-      # ServiceDown: bất kỳ exporter nào bị down
-      - alert: ServiceDown
-        expr: up == 0
+      # ==========================================================
+      # 1. WEB SERVICE DOWN (Auto-Recovery Target)
+      # Sử dụng nginx_up == 0 để kiểm tra sức khỏe Nginx, không phải Exporter.
+      - alert: WebServiceDown
+        expr: nginx_up == 0
         for: 30s
         labels:
-          severity: critical
+          severity: warning # warning -> Webhook (Auto-Recovery)
+          service_to_recover: web_service # Tên dịch vụ cần phục hồi
         annotations:
-          summary: "Service {{ $labels.job }} is DOWN (instance={{ $labels.instance }})"
+          summary: "Web Service is DOWN (via Nginx Exporter: {{ $labels.instance }})"
+          description: "Web Service (web_service) đã bị mất kết nối với Nginx Exporter trong 30s."
 
-      # DBServiceDown: chuyên cho MySQL Exporter
+      # ==========================================================
+      # 2. DB SERVICE DOWN (Auto-Recovery Target)
+      # SỬA LỖI: Dùng mysql_up == 0 để kiểm tra sức khỏe MySQL, không phải Exporter.
       - alert: DBServiceDown
-        expr: up{job="mysql_exporter"} == 0
+        expr: mysql_up == 0
         for: 30s
         labels:
-          severity: critical
+          severity: warning # warning -> Webhook (Auto-Recovery)
+          service_to_recover: db_service # Tên dịch vụ cần phục hồi
         annotations:
-          summary: "MySQL Exporter is DOWN (instance={{ $labels.instance }})"
+          summary: "MySQL Service is DOWN"
+          description: "MySQL Service (db_service) đã mất kết nối với MySQL Exporter."
 
-      # Nginx Exporter down
+      # ==========================================================
+      # 3. NGINX EXPORTER DOWN (Chẩn đoán - Exporter mất)
+      # Sử dụng up == 0 để kiểm tra tình trạng của Exporter (severity: critical)
       - alert: NginxExporterDown
         expr: up{job="nginx_exporter"} == 0
         for: 30s
         labels:
-          severity: critical
+          severity: warning
+          service_to_recover: nginx_exporter # Thêm để có thể phục hồi nếu cần thiết
         annotations:
           summary: "Nginx Exporter is DOWN (instance={{ $labels.instance }})"
 
-      # High CPU usage (container)
+      # ==========================================================
+      # 4. HIGH CPU USAGE (Auto-Recovery: Restart Web Service)
       - alert: HighCPUUsage
-        expr: rate(container_cpu_usage_seconds_total[1m]) > 0.7
-        for: 1m
+      # SỬA LỖI TRIỆT ĐỂ: Dùng nhãn 'container_label_com_docker_compose_service'
+        expr: sum(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="web_service"}[1m])) by (container_label_com_docker_compose_service) > 0.1 
+        for: 30s # Đặt 30s để kiểm thử nhanh
         labels:
-          severity: warning
+          severity: warning 
+          service_to_recover: web_service 
         annotations:
-          summary: "High CPU usage on {{ $labels.instance }}"
+          summary: "High CPU usage on {{ $labels.container_label_com_docker_compose_service }} (Auto-Restarting)"
 
-      # High Memory usage (container > ~500MB)
+      # Rule 5: HIGH MEMORY USAGE (Giữ ngưỡng cao để tránh trùng)
       - alert: HighMemoryUsage
-        expr: container_memory_usage_bytes > 500000000
+      # Ngưỡng mới: 50MB
+        expr: container_memory_usage_bytes{container_label_com_docker_compose_service="web_service"} > 50000000
         for: 1m
         labels:
-          severity: warning
+          severity: warning 
+          service_to_recover: web_service 
         annotations:
-          summary: "High memory usage on {{ $labels.instance }}"
+          summary: "High memory usage on {{ $labels.container_label_com_docker_compose_service }} (Auto-Restarting)"
 
-      # Disk almost full (>80%)
+      # ==========================================================
+      # 6. DISK ALMOST FULL (Auto-Recovery: Giả lập Cleanup Host)
       - alert: DiskAlmostFull
-        expr: (node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} - node_filesystem_free_bytes{fstype!~"tmpfs|overlay"}) / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} > 0.8
-        for: 2m
+      # Đặt ngưỡng MỚI > 0.6 (60%) để Rule này chuyển sang RESOLVED ngay lập tức, 
+      # vì đĩa Host hiện tại của bạn chỉ là 56.4%
+        expr: (node_filesystem_size_bytes{fstype=~"ext4|xfs"} - node_filesystem_free_bytes{fstype=~"ext4|xfs"}) / node_filesystem_size_bytes{fstype=~"ext4|xfs"} > 0.60
+        for: 30s # Giảm thời gian chờ để RESOLVE nhanh
         labels:
-          severity: critical
+          severity: warning 
+          service_to_recover: host_cleanup 
         annotations:
-          summary: "Disk almost full on {{ $labels.instance }}"
+          summary: "Disk usage is over 60% on {{ $labels.instance }} (Executing cleanup script)"
 
-      # Nginx quá nhiều request (flood)
+      # ==========================================================
+      # 7. NGINX HIGH CONNECTIONS (Auto-Recovery: Restart Web Service)
       - alert: NginxHighConnections
-        expr: nginx_http_requests_total > 1000
+      # SỬA: Giám sát tốc độ (rate) trung bình 5 request/giây trong 1 phút
+        expr: rate(nginx_http_requests_total[1m]) > 5 
         for: 1m
         labels:
-          severity: warning
+          severity: warning 
+          service_to_recover: web_service 
         annotations:
-          summary: "High number of Nginx requests on {{ $labels.instance }}"
-
+          summary: "High number of Nginx requests (over 5rps) on {{ $labels.instance }} (Auto-Restarting)"

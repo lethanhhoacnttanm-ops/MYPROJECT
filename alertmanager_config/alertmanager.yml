@@ -1,8 +1,8 @@
-global:
+global: # KHÓA 'global' ĐÃ ĐƯỢC THÊM VÀ LỒNG ĐÚNG CẤP ĐỘ
   smtp_smarthost: 'smtp.gmail.com:587'
   smtp_from: 'lethanhhoa.cntt.anm@gmail.com'
   smtp_auth_username: 'lethanhhoa.cntt.anm@gmail.com'
-  smtp_auth_password: 'surs nbji ydfb mkke'   # app password Gmail
+  smtp_auth_password: 'surs nbji ydfb mkke'
   smtp_require_tls: true
   resolve_timeout: 5m
 
@@ -13,16 +13,30 @@ route:
   group_interval: 2m
   repeat_interval: 1h
   routes:
+    # 1. Route WARNING -> Webhook (Auto-Recovery)
     - match:
-        severity: critical
-      receiver: 'gmail-alert'
+        severity: warning
+      receiver: 'webhook-alert'
+      continue: true 
+
+    # 2. Route WARNING -> Email
     - match:
         severity: warning
       receiver: 'gmail-alert'
+      continue: true 
 
-receivers:
+    # 3. Route CRITICAL -> Email
+    - match:
+        severity: critical
+      receiver: 'gmail-alert'
+      
+receivers: # KHÓA 'receivers' ĐÃ ĐƯỢC LỒNG ĐÚNG CẤP ĐỘ
   - name: 'gmail-alert'
     email_configs:
       - to: 'lethanhhoa.cntt.anm@gmail.com'
         send_resolved: true
 
+  - name: 'webhook-alert'
+    webhook_configs:
+      - url: 'http://webhook:5001/webhook'
+        send_resolved: true
